@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>古建筑墙面饰砖空鼓联合反演</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>古建筑墙面饰砖空鼓联合反演</h1>
+    <p class="subtitle">
+      录入多次矩形敲击抽检区域及其中听到的空鼓砖数量，系统将联合判定每块砖的空鼓状态，
+      使每次检测记录都精确成立；存在多种解释时，选取空鼓总数最少、状态序列字典序最小的方案。
+    </p>
+  </header>
+
+  <main>
+    <section class="panel" id="input-panel">
+      <h2>1. 网格设置</h2>
+      <div class="grid-config">
+        <label>行数
+          <select id="rows-select">
+            <option value="4" selected>4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+        <label>列数
+          <select id="cols-select">
+            <option value="4" selected>4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+      </div>
+
+      <h2>2. 检测记录 <span class="hint">（3 至 12 次矩形区域抽检，坐标从 1 起计）</span></h2>
+      <table id="regions-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>起始行</th>
+            <th>起始列</th>
+            <th>结束行</th>
+            <th>结束列</th>
+            <th>空鼓数</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="regions-tbody"></tbody>
+      </table>
+      <div class="actions">
+        <button id="add-region-btn" type="button">＋ 添加检测区域</button>
+        <button id="submit-btn" type="button" class="primary">提交反演</button>
+      </div>
+      <p id="input-error" class="input-error" role="alert" hidden></p>
+    </section>
+
+    <section class="panel" id="result-panel" hidden>
+      <h2>3. 反演结论</h2>
+      <div id="conclusion" class="conclusion"></div>
+      <div id="result-grid-wrap" class="result-grid-wrap">
+        <div id="result-grid" class="tile-grid"></div>
+        <div class="legend">
+          <span><span class="swatch swatch-hollow"></span>空鼓</span>
+          <span><span class="swatch swatch-sound"></span>完好</span>
+        </div>
+      </div>
+      <h3>各检测区域核对</h3>
+      <table id="region-result-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>区域（行,列 闭区间）</th>
+            <th>记录空鼓数</th>
+            <th>实际空鼓数</th>
+            <th>一致性</th>
+          </tr>
+        </thead>
+        <tbody id="region-result-tbody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
