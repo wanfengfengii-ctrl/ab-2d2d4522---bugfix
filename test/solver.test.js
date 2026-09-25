@@ -181,3 +181,42 @@ test('全部区域计数为零 => 全完好', () => {
   assert.equal(res.total, 0);
   assert.deepEqual(res.grid, new Array(25).fill(0));
 });
+
+test('5x5 右下角重叠记录计数 0/1/0：单条合法、联合矛盾 => 无解', () => {
+  const regions = [
+    { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+    { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+    { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+  ];
+  assert.deepEqual(solve(5, 5, regions), { satisfiable: false });
+});
+
+test('相同砖块集合计数冲突直接判无解，未覆盖砖恒为完好', () => {
+  // 同一 1x1 区域给出 0 与 1 两个计数；其余 24 块砖未被覆盖。
+  const regions = [
+    { r1: 0, c1: 0, r2: 0, c2: 0, count: 0 },
+    { r1: 0, c1: 0, r2: 0, c2: 0, count: 1 },
+    { r1: 0, c1: 0, r2: 0, c2: 0, count: 1 },
+  ];
+  assert.deepEqual(solve(5, 5, regions), { satisfiable: false });
+
+  const ok = solve(5, 5, [
+    { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+    { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+    { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+  ]);
+  assert.equal(ok.satisfiable, true);
+  assert.equal(ok.total, 1);
+  const expected = new Array(25).fill(0);
+  expected[24] = 1;
+  assert.deepEqual(ok.grid, expected);
+});
+
+test('包含区域计数倒置（A⊆B 但 count(A)>count(B)）判无解', () => {
+  const regions = [
+    { r1: 0, c1: 0, r2: 4, c2: 4, count: 2 },
+    { r1: 0, c1: 0, r2: 2, c2: 2, count: 3 }, // 被全盘包含却计数更大
+    { r1: 3, c1: 3, r2: 4, c2: 4, count: 0 },
+  ];
+  assert.deepEqual(solve(5, 5, regions), { satisfiable: false });
+});

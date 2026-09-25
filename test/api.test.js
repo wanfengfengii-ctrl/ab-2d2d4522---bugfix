@@ -90,6 +90,77 @@ test('POST /api/solve 矛盾记录：返回 unsatisfiable 且不携带网格结�
   assert.equal(data.grid, undefined);
 });
 
+test('合法但彼此矛盾的重叠饰砖记录（5x5 右下角计数 0/1/0）判为 unsatisfiable 而非输入错误', async () => {
+  // 三条记录各自合法、允许重叠，但无法同时满足：右下角同一块砖
+  // 不可能既完好（计数 0）又空鼓（计数 1）。
+  const body = {
+    rows: 5,
+    cols: 5,
+    regions: [
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+    ],
+  };
+  const res = await fetch(`${baseUrl}/api/solve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.status, 'unsatisfiable');
+  assert.equal(data.grid, undefined);
+});
+
+test('并发矛盾求解不阻塞健康检查与无关请求', async () => {
+  const body = {
+    rows: 5,
+    cols: 5,
+    regions: [
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+    ],
+  };
+  const t0 = Date.now();
+  const postSolve = () => fetch(`${baseUrl}/api/solve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  // 并发提交 3 个求解请求。
+  const solves = [0, 1, 2].map((i) => postSolve().then(async (res) => {
+    const data = await res.json();
+    return { i, status: res.status, body: data, ms: Date.now() - t0 };
+  }));
+
+  // 100ms 后发起健康检查，随后再发一个无关请求。
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  await sleep(100);
+  const healthStart = Date.now();
+  const healthRes = await fetch(`${baseUrl}/api/health`);
+  const healthLatency = Date.now() - healthStart;
+  const healthBody = await healthRes.json();
+
+  const unrelatedStart = Date.now();
+  const pageRes = await fetch(`${baseUrl}/`);
+  const unrelatedLatency = Date.now() - unrelatedStart;
+  assert.equal(pageRes.status, 200);
+
+  const results = await Promise.all(solves);
+  for (const r of results) {
+    assert.equal(r.status, 200, `求解 ${r.i} 应为 200`);
+    assert.equal(r.body.status, 'unsatisfiable', `求解 ${r.i} 应判无解`);
+  }
+  assert.equal(healthRes.status, 200);
+  assert.deepEqual(healthBody, { status: 'ok' });
+  // 健康检查与无关请求的服务端等待均不得超过 1 秒。
+  assert.ok(healthLatency < 1000, `健康检查耗时 ${healthLatency}ms`);
+  assert.ok(unrelatedLatency < 1000, `无关请求耗时 ${unrelatedLatency}ms`);
+});
+
 test('POST /api/solve 非法输入被服务端拒绝（400）', async () => {
   const cases = [
     { ...VALID_BODY, rows: 6 },                       // 行数越界

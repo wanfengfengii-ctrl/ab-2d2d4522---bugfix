@@ -17,13 +17,21 @@
 ## 目录结构
 
 ```
-src/solver.js     联合反演求解器（分支限界求最少空鼓 + 字典序最小构造）
-src/server.js     零依赖 HTTP 服务：静态页面 + /api/solve + /api/health
-public/           前端页面（网格录入、结果网格、区域计数核对、一致性结论）
-test/             node:test 单元测试与 API 测试（含暴力枚举对照）
-scripts/check.js  构建检查（语法 / JSON / 必备文件）
-scripts/verify.js 验收编排：代码测试 + 构建检查 + API/HTTP 冒烟，以退出码报告结论
+src/solver.js        联合反演求解器（约束传播 + 分支限界：贪心初界、失败先行分支、装箱式计数边界）
+src/solver-worker.js worker 线程入口，在事件循环之外运行同步求解
+src/solver-pool.js   worker 池：求解任务排队、超时终止重启，保证健康检查不被求解阻塞
+src/server.js        零依赖 HTTP 服务：静态页面 + /api/solve + /api/health
+public/              前端页面（网格录入、结果网格、区域计数核对、一致性结论）
+test/                node:test 单元测试与 API 测试（含暴力枚举对照）
+scripts/check.js     构建检查（语法 / JSON / 必备文件）
+scripts/verify.js    验收编排：代码测试 + 构建检查 + API/HTTP 冒烟，以退出码报告结论
 ```
+
+CPU 密集的搜索运行在 worker 线程池中，主事件循环只负责收发消息，
+因此求解请求（即使是耗时的矛盾实例）不会阻塞 `/api/health` 或静态
+资源等无关请求。可用环境变量 `SOLVE_WORKERS`（worker 数，默认
+`min(4, CPU-1)`）、`SOLVE_TIMEOUT_MS`（单任务超时，默认 8000ms）、
+`SOLVE_NODE_LIMIT`（单次搜索节点预算，默认 2000000）调节。
 
 ## 本地运行
 

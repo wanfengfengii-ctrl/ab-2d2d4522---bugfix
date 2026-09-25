@@ -125,6 +125,55 @@ async function smoke() {
     record('无解识别 POST /api/solve', false, err.message);
   }
 
+  // 合法但彼此矛盾的重叠饰砖记录（5x5 右下角同一块砖计数 0/1/0）：
+  // 单条均合法、允许重叠，但无法共同满足，须作为合法求解返回 unsatisfiable。
+  const overlapCase = {
+    rows: 5,
+    cols: 5,
+    regions: [
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+    ],
+  };
+  try {
+    const res = await postJson('/api/solve', overlapCase);
+    const data = await res.json();
+    record(
+      '重叠矛盾记录返回 unsatisfiable（非输入错误）',
+      res.status === 200 && data.status === 'unsatisfiable' && !data.grid,
+      res.status === 200 ? '' : `HTTP ${res.status}`,
+    );
+  } catch (err) {
+    record('重叠矛盾记录返回 unsatisfiable（非输入错误）', false, err.message);
+  }
+
+  // 并发 3 个矛盾求解，100ms 后发起健康检查：求解都应及时判无解，
+  // 健康检查的服务端等待不得超过 1 秒。
+  try {
+    const start = Date.now();
+    const solves = [0, 1, 2].map(() => postJson('/api/solve', overlapCase).then(async (res) => {
+      const data = await res.json();
+      return res.status === 200 && data.status === 'unsatisfiable';
+    }));
+    await sleep(100);
+    const healthBegin = Date.now();
+    const healthRes = await fetch(`${APP_URL}/api/health`);
+    const healthBody = await healthRes.json();
+    const healthWait = Date.now() - healthBegin;
+    const solveResults = await Promise.all(solves);
+    const allUnsat = solveResults.every(Boolean);
+    const totalMs = Date.now() - start;
+    record(
+      '并发矛盾求解不阻塞健康检查',
+      healthRes.ok && healthBody.status === 'ok'
+        && allUnsat && healthWait < 1000 && totalMs < 5000,
+      `health 等待 ${healthWait}ms，3 个求解均无解=${allUnsat}，总耗时 ${totalMs}ms`,
+    );
+  } catch (err) {
+    record('并发矛盾求解不阻塞健康检查', false, err.message);
+  }
+
   // 非法输入拒绝
   try {
     const res = await postJson('/api/solve', { rows: 9, cols: 4, regions: [] });

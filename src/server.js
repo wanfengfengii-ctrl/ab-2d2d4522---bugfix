@@ -3,7 +3,8 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { solve, countInRegion } = require('./solver');
+const { countInRegion } = require('./solver');
+const { SolverPool } = require('./solver-pool');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -72,7 +73,7 @@ function validatePayload(payload) {
   return null;
 }
 
-function handleSolve(req, res) {
+async function handleSolve(pool, req, res) {
   let body = '';
   let tooLarge = false;
   req.on('data', (chunk) => {
@@ -82,7 +83,7 @@ function handleSolve(req, res) {
       req.destroy();
     }
   });
-  req.on('end', () => {
+  req.on('end', async () => {
     if (tooLarge) {
       sendJson(res, 413, { error: 'payload_too_large', message: '请求体过大' });
       return;
@@ -102,9 +103,20 @@ function handleSolve(req, res) {
     const { rows, cols, regions } = payload;
     let result;
     try {
-      result = solve(rows, cols, regions);
+      // 在 worker 线程中求解，避免搜索占用主事件循环而阻塞健康检查。
+      result = await pool.run(rows, cols, regions);
     } catch (err) {
-      sendJson(res, 500, { error: 'solve_failed', message: '求解过程发生内部错误' });
+      sendJson(res, 503, {
+        error: 'solver_unavailable',
+        message: '求解服务暂时繁忙或超时，请稍后重试',
+      });
+      return;
+    }
+    if (result.inconclusive) {
+      sendJson(res, 503, {
+        error: 'solver_overloaded',
+        message: '该请求的求解搜索超出计算预算，请稍后重试或精简检测区域',
+      });
       return;
     }
     if (!result.satisfiable) {
@@ -166,15 +178,15 @@ function serveStatic(req, res) {
   });
 }
 
-function createServer() {
-  return http.createServer((req, res) => {
+function createServer(pool = new SolverPool(), ownsPool = true) {
+  const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     if (req.method === 'GET' && pathname === '/api/health') {
       sendJson(res, 200, { status: 'ok' });
       return;
     }
     if (req.method === 'POST' && pathname === '/api/solve') {
-      handleSolve(req, res);
+      handleSolve(pool, req, res);
       return;
     }
     if (req.method === 'GET' || req.method === 'HEAD') {
@@ -183,16 +195,29 @@ function createServer() {
     }
     sendJson(res, 405, { error: 'method_not_allowed', message: '不支持的请求方法' });
   });
+  if (ownsPool) {
+    server.on('close', () => { pool.close().catch(() => {}); });
+  }
+  return server;
 }
 
 if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
-  const server = createServer();
+  const pool = new SolverPool();
+  const server = createServer(pool, false);
   server.listen(port, () => {
     console.log(`空鼓反演服务已启动: http://0.0.0.0:${port}`);
   });
-  process.on('SIGTERM', () => server.close(() => process.exit(0)));
-  process.on('SIGINT', () => server.close(() => process.exit(0)));
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    server.close(() => {
+      pool.close().finally(() => process.exit(0));
+    });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 module.exports = { createServer, validatePayload };
