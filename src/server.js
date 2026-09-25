@@ -3,7 +3,8 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { solve, countInRegion } = require('./solver');
+const { countInRegion } = require('./solver');
+const { SolvePool } = require('./solvePool');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -72,7 +73,7 @@ function validatePayload(payload) {
   return null;
 }
 
-function handleSolve(req, res) {
+function handleSolve(req, res, pool) {
   let body = '';
   let tooLarge = false;
   req.on('data', (chunk) => {
@@ -82,7 +83,7 @@ function handleSolve(req, res) {
       req.destroy();
     }
   });
-  req.on('end', () => {
+  req.on('end', async () => {
     if (tooLarge) {
       sendJson(res, 413, { error: 'payload_too_large', message: '请求体过大' });
       return;
@@ -102,7 +103,9 @@ function handleSolve(req, res) {
     const { rows, cols, regions } = payload;
     let result;
     try {
-      result = solve(rows, cols, regions);
+      // 求解在工作线程池中执行，主线程事件循环不被占用，
+      // 健康检查与无关请求在求解期间仍可及时响应。
+      result = await pool.solve(rows, cols, regions);
     } catch (err) {
       sendJson(res, 500, { error: 'solve_failed', message: '求解过程发生内部错误' });
       return;
@@ -167,14 +170,15 @@ function serveStatic(req, res) {
 }
 
 function createServer() {
-  return http.createServer((req, res) => {
+  const pool = new SolvePool();
+  const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname;
     if (req.method === 'GET' && pathname === '/api/health') {
       sendJson(res, 200, { status: 'ok' });
       return;
     }
     if (req.method === 'POST' && pathname === '/api/solve') {
-      handleSolve(req, res);
+      handleSolve(req, res, pool);
       return;
     }
     if (req.method === 'GET' || req.method === 'HEAD') {
@@ -183,6 +187,11 @@ function createServer() {
     }
     sendJson(res, 405, { error: 'method_not_allowed', message: '不支持的请求方法' });
   });
+  // 服务关闭时一并终止求解线程池。
+  server.on('close', () => {
+    pool.close();
+  });
+  return server;
 }
 
 if (require.main === module) {

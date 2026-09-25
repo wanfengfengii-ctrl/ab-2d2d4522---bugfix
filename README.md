@@ -17,12 +17,14 @@
 ## 目录结构
 
 ```
-src/solver.js     联合反演求解器（分支限界求最少空鼓 + 字典序最小构造）
-src/server.js     零依赖 HTTP 服务：静态页面 + /api/solve + /api/health
-public/           前端页面（网格录入、结果网格、区域计数核对、一致性结论）
-test/             node:test 单元测试与 API 测试（含暴力枚举对照）
-scripts/check.js  构建检查（语法 / JSON / 必备文件）
-scripts/verify.js 验收编排：代码测试 + 构建检查 + API/HTTP 冒烟，以退出码报告结论
+src/solver.js      联合反演求解器（约束传播 + 分支限界求最少空鼓 + 字典序最小构造）
+src/server.js      零依赖 HTTP 服务：静态页面 + /api/solve + /api/health
+src/solvePool.js   求解线程池：求解任务分发到工作线程，事件循环不被阻塞
+src/solveWorker.js 求解工作线程入口
+public/            前端页面（网格录入、结果网格、区域计数核对、一致性结论）
+test/              node:test 单元测试与 API 测试（含暴力枚举对照）
+scripts/check.js   构建检查（语法 / JSON / 必备文件）
+scripts/verify.js  验收编排：代码测试 + 构建检查 + API/HTTP 冒烟，以退出码报告结论
 ```
 
 ## 本地运行

@@ -89,6 +89,32 @@ test('互相矛盾的记录判定为无解', () => {
   assert.deepEqual(solve(4, 4, regions), { satisfiable: false });
 });
 
+test('5x5 三条记录覆盖右下角同一块砖（计数 0/1/0）：合法输入、联合矛盾、即时判无解', () => {
+  // 每条记录单独合法、允许重叠，但三者无法共同满足：
+  // 计数 0 要求该砖完好，计数 1 要求该砖空鼓。
+  const cases = [
+    // 三条均为同一单砖区域
+    [
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+    ],
+    // 不同形状的重叠区域：两个 0 计数区域的并集完全覆盖 1 计数区域
+    [
+      { r1: 3, c1: 0, r2: 4, c2: 4, count: 0 },
+      { r1: 3, c1: 3, r2: 4, c2: 4, count: 1 },
+      { r1: 0, c1: 4, r2: 4, c2: 4, count: 0 },
+    ],
+  ];
+  for (const regions of cases) {
+    const t0 = Date.now();
+    const res = solve(5, 5, regions);
+    const elapsed = Date.now() - t0;
+    assert.deepEqual(res, { satisfiable: false });
+    assert.ok(elapsed < 250, `联合矛盾应即时判定，实际耗时 ${elapsed}ms`);
+  }
+});
+
 test('包含与被包含区域数量矛盾判定为无解', () => {
   const regions = [
     { r1: 0, c1: 0, r2: 1, c2: 1, count: 1 },

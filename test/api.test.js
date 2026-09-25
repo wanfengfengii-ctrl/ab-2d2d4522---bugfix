@@ -90,6 +90,47 @@ test('POST /api/solve 矛盾记录：返回 unsatisfiable 且不携带网格结�
   assert.equal(data.grid, undefined);
 });
 
+test('并发矛盾求解：各自及时返回 unsatisfiable，且健康检查/无关请求等待不超过 1 秒', async () => {
+  // 5x5 网格，三条合法记录均覆盖右下角同一块砖，计数 0、1、0：
+  // 单条合法、允许重叠、三者联合矛盾 => 200 + unsatisfiable（而非 400）。
+  const conflictBody = {
+    rows: 5,
+    cols: 5,
+    regions: [
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 1 },
+      { r1: 4, c1: 4, r2: 4, c2: 4, count: 0 },
+    ],
+  };
+  const timed = async (fn) => {
+    const t0 = Date.now();
+    const out = await fn();
+    return { out, ms: Date.now() - t0 };
+  };
+  const postSolve = () => fetch(`${baseUrl}/api/solve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(conflictBody),
+  }).then(async (res) => ({ status: res.status, body: await res.json() }));
+
+  // 并发提交 3 个该求解请求，100ms 后发起健康检查与无关请求。
+  const solves = [0, 1, 2].map(() => timed(postSolve));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const health = timed(() => fetch(`${baseUrl}/api/health`).then((res) => res.json()));
+  const unrelated = timed(() => fetch(`${baseUrl}/`).then((res) => res.status));
+
+  const [s0, s1, s2, h, u] = await Promise.all([...solves, health, unrelated]);
+  for (const [i, s] of [s0, s1, s2].entries()) {
+    assert.equal(s.out.status, 200, `求解 #${i} 应作为合法求解处理（HTTP 200）`);
+    assert.equal(s.out.body.status, 'unsatisfiable', `求解 #${i} 应判为联合矛盾`);
+    assert.ok(s.ms < 1000, `求解 #${i} 应及时返回，实际 ${s.ms}ms`);
+  }
+  assert.equal(h.out.status, 'ok');
+  assert.ok(h.ms < 1000, `健康检查等待不得超过 1 秒，实际 ${h.ms}ms`);
+  assert.equal(u.out, 200);
+  assert.ok(u.ms < 1000, `无关请求等待不得超过 1 秒，实际 ${u.ms}ms`);
+});
+
 test('POST /api/solve 非法输入被服务端拒绝（400）', async () => {
   const cases = [
     { ...VALID_BODY, rows: 6 },                       // 行数越界
